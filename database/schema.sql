@@ -1,0 +1,175 @@
+-- Fresh-install schema for CAMS. Existing databases must use migrate_2026_09.sql.
+CREATE DATABASE IF NOT EXISTS college_attendance
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+USE college_attendance;
+
+CREATE TABLE IF NOT EXISTS users (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(64) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  role ENUM('ADMIN','TEACHER','STUDENT') NOT NULL,
+  status ENUM('ACTIVE','DISABLED') NOT NULL DEFAULT 'ACTIVE',
+  last_login_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS admins (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  email VARCHAR(120) NOT NULL,
+  designation VARCHAR(80) NOT NULL DEFAULT 'HOD',
+  department VARCHAR(80) NOT NULL DEFAULT 'MCA',
+  CONSTRAINT fk_admins_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS teachers (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  teacher_code VARCHAR(20) NOT NULL UNIQUE,
+  name VARCHAR(120) NOT NULL,
+  email VARCHAR(120) NOT NULL,
+  phone VARCHAR(20) NULL,
+  department VARCHAR(80) NOT NULL DEFAULT 'MCA',
+  status ENUM('ACTIVE','DISABLED') NOT NULL DEFAULT 'ACTIVE',
+  CONSTRAINT fk_teachers_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS students (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  roll_no VARCHAR(20) NOT NULL UNIQUE,
+  name VARCHAR(120) NOT NULL,
+  email VARCHAR(120) NOT NULL,
+  section VARCHAR(10) NOT NULL DEFAULT 'A',
+  department VARCHAR(80) NOT NULL DEFAULT 'MCA',
+  status ENUM('ACTIVE','DISABLED') NOT NULL DEFAULT 'ACTIVE',
+  CONSTRAINT fk_students_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS subjects (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  subject_code VARCHAR(30) NOT NULL UNIQUE,
+  subject_name VARCHAR(160) NOT NULL,
+  department VARCHAR(80) NOT NULL DEFAULT 'MCA',
+  status ENUM('ACTIVE','DISABLED') NOT NULL DEFAULT 'ACTIVE'
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS teacher_subjects (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  teacher_id INT UNSIGNED NOT NULL,
+  subject_id INT UNSIGNED NOT NULL,
+  assigned_by INT UNSIGNED NULL,
+  assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_teacher_subject (teacher_id, subject_id),
+  CONSTRAINT fk_ts_teacher FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE,
+  CONSTRAINT fk_ts_subject FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE,
+  CONSTRAINT fk_ts_assigned_by FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS timetable (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  day ENUM('Monday','Tuesday','Wednesday','Thursday','Friday','Saturday') NOT NULL,
+  subject_id INT UNSIGNED NOT NULL,
+  teacher_id INT UNSIGNED NOT NULL,
+  start_time TIME NOT NULL,
+  end_time TIME NOT NULL,
+  status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_tt_subject FOREIGN KEY (subject_id) REFERENCES subjects(id),
+  CONSTRAINT fk_tt_teacher FOREIGN KEY (teacher_id) REFERENCES teachers(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS class_sessions (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  timetable_id INT UNSIGNED NOT NULL,
+  teacher_id INT UNSIGNED NOT NULL,
+  subject_id INT UNSIGNED NOT NULL,
+  class_date DATE NOT NULL,
+  scheduled_start TIME NOT NULL,
+  scheduled_end TIME NOT NULL,
+  actual_start DATETIME NULL,
+  actual_end DATETIME NULL,
+  start_delay_seconds INT NOT NULL DEFAULT 0,
+  end_delay_seconds INT NOT NULL DEFAULT 0,
+  duration_seconds INT NOT NULL DEFAULT 0,
+  is_late_start TINYINT(1) NOT NULL DEFAULT 0,
+  is_short_session TINYINT(1) NOT NULL DEFAULT 0,
+  cancel_reason VARCHAR(255) NULL,
+  skip_reason VARCHAR(255) NULL,
+  status ENUM('SCHEDULED','ONGOING','COMPLETED','CANCELLED','NOT_CONDUCTED') NOT NULL DEFAULT 'SCHEDULED',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_session_slot (timetable_id, class_date),
+  CONSTRAINT fk_cs_tt FOREIGN KEY (timetable_id) REFERENCES timetable(id),
+  CONSTRAINT fk_cs_teacher FOREIGN KEY (teacher_id) REFERENCES teachers(id),
+  CONSTRAINT fk_cs_subject FOREIGN KEY (subject_id) REFERENCES subjects(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS attendance (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  session_id INT UNSIGNED NOT NULL,
+  student_id INT UNSIGNED NOT NULL,
+  status ENUM('PRESENT','ABSENT') NOT NULL,
+  marked_at DATETIME NULL,
+  marked_by INT UNSIGNED NULL,
+  method ENUM('TEACHER','MANUAL') NOT NULL DEFAULT 'TEACHER',
+  UNIQUE KEY uq_att (session_id, student_id),
+  CONSTRAINT fk_att_session FOREIGN KEY (session_id) REFERENCES class_sessions(id) ON DELETE CASCADE,
+  CONSTRAINT fk_att_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+  CONSTRAINT fk_att_marked_by FOREIGN KEY (marked_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS attendance_logs (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  attendance_id INT UNSIGNED NOT NULL,
+  session_id INT UNSIGNED NOT NULL,
+  student_id INT UNSIGNED NOT NULL,
+  old_status VARCHAR(20) NULL,
+  new_status VARCHAR(20) NOT NULL,
+  changed_by INT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_al_att FOREIGN KEY (attendance_id) REFERENCES attendance(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS internal_exams (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(80) NOT NULL,
+  max_marks DECIMAL(6,2) NOT NULL,
+  sort_order INT NOT NULL DEFAULT 1
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS internal_marks (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  student_id INT UNSIGNED NOT NULL,
+  subject_id INT UNSIGNED NOT NULL,
+  exam_id INT UNSIGNED NOT NULL,
+  marks DECIMAL(6,2) NOT NULL,
+  updated_by INT UNSIGNED NULL,
+  UNIQUE KEY uq_mark (student_id, subject_id, exam_id),
+  CONSTRAINT fk_im_st FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+  CONSTRAINT fk_im_sub FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE,
+  CONSTRAINT fk_im_ex FOREIGN KEY (exam_id) REFERENCES internal_exams(id) ON DELETE CASCADE,
+  CONSTRAINT fk_im_user FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NULL,
+  action VARCHAR(80) NOT NULL,
+  details TEXT NULL,
+  ip_address VARCHAR(45) NULL,
+  user_agent VARCHAR(255) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_audit_created (created_at),
+  CONSTRAINT fk_audit_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS login_attempts (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(64) NOT NULL,
+  ip_address VARCHAR(45) NULL,
+  success TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_login_user_time (username, created_at)
+) ENGINE=InnoDB;

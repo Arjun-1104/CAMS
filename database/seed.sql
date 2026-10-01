@@ -1,0 +1,2 @@
+-- No sample records are loaded. Create real accounts, subjects, timetable
+-- entries, and internal exams through the HOD dashboard.

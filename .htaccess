@@ -1,0 +1,6 @@
+# Send every pretty URL (example: /login) to index.php
+# Required when using XAMPP Apache.
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [QSA,L]
